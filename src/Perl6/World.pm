@@ -264,14 +264,34 @@ class Perl6::World is HLL::World {
         my %to_install;
         my @clash;
         for %stash {
-            if $target.symbol($_.key) {
-                # XXX TODO: Merge handling.
-                nqp::push(@clash, $_.key);
+            my $proto;
+            try {
+                $proto := self.find_symbol([$_.key]);
+            }
+            # It is a multi, so we need to install a proto in the lexpad and add dispatchees.
+            # Note: NQPCursorRole does not support get_bool, therefor skipped.
+            if $_.key ne 'NQPCursorRole' && $proto && $proto.is_dispatcher {
+                # Symbol not yet known, we should install a proto here.
+                if !$target.symbol($_.key) {
+                    self.install_lexical_symbol($target, $_.key, $_.value, :clone(0));
+                }
+                # Symbol is known, we need to add dispatchees to the proto that was added earlier.
+                else {
+                    $proto := $target.symbol($_.key)<value>;
+                    self.add_dispatchee_to_proto($proto, $_.value);
+                    self.install_lexical_symbol($target, $_.key, $proto, :clone(0));
+                }
             }
             else {
-                $target.symbol($_.key, :scope('lexical'), :value($_.value));
-                $target[0].push(QAST::Var.new( :scope('lexical'), :name($_.key), :decl('var') ));
-                %to_install{$_.key} := $_.value;
+                if $target.symbol($_.key) {
+                    # If it is not a multi and the symbol is already there, it is a redeclaration.
+                    nqp::push(@clash, $_.key);
+                }
+                else {
+                    $target.symbol($_.key, :scope('lexical'), :value($_.value));
+                    $target[0].push(QAST::Var.new( :scope('lexical'), :name($_.key), :decl('var') ));
+                    %to_install{$_.key} := $_.value;
+                }
             }
         }
         if +@clash {
