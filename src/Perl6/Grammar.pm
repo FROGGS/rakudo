@@ -239,6 +239,10 @@ role STD {
         self.typed_panic('X::Comp::NYI', :$feature)
     }
 
+    method EXPR_nonassoc($cur, $left, $right) {
+        self.typed_panic('X::Syntax::NonAssociative', :left(~$left), :right(~$right));
+    }
+
     # "when" arg assumes more things will become obsolete after Perl 6 comes out...
     method obs($old, $new, $when = 'in Perl 6') {
         $*W.throw(self.MATCH(), ['X', 'Obsolete'],
@@ -2732,6 +2736,7 @@ grammar Perl6::Grammar is HLL::Grammar does STD {
         }
         <rx_adverbs>
         <sibble(%*RX<P5> ?? %*LANG<P5Regex> !! %*LANG<Regex>, %*LANG<Q>, ['qq'])>
+        <.old_rx_mods>?
     }
 
     token old_rx_mods {
@@ -2790,7 +2795,7 @@ grammar Perl6::Grammar is HLL::Grammar does STD {
         Perl6::Grammar.O(':prec<q=>, :assoc<list>', '%junctive_and');
         Perl6::Grammar.O(':prec<p=>, :assoc<list>', '%junctive_or');
         Perl6::Grammar.O(':prec<o=>, :assoc<unary>', '%named_unary');
-        Perl6::Grammar.O(':prec<n=>, :assoc<left>',  '%structural');
+        Perl6::Grammar.O(':prec<n=>, :assoc<non>',  '%structural');
         Perl6::Grammar.O(':prec<m=>, :assoc<left>, :iffy<1>, :pasttype<chain>',  '%chaining');
         Perl6::Grammar.O(':prec<l=>, :assoc<left>',  '%tight_and');
         Perl6::Grammar.O(':prec<k=>, :assoc<list>',  '%tight_or');
