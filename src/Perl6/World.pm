@@ -348,23 +348,6 @@ class Perl6::World is HLL::World {
         1;
     }
     
-    # Adds code to do the signature binding.
-    sub add_signature_binding_code($block, $sig_obj, @params) {
-        # Set arity.
-        my int $arity := 0;
-        $block.arity($arity);
-
-        # Flag that we do custom arguments processing, and invoke the binder.
-        # Need to expose the arguments as a lexical, for things like deferral.
-        $block.custom_args(1);
-        $block[0].push(QAST::Op.new( :op('bind'),
-            QAST::Var.new( :name('call_sig'), :scope('lexical'), :decl('var') ),
-            QAST::Op.new( :op('p6getcallsig') ) ));
-        $block[0].push(QAST::Op.new( :op('p6bindsig') ));
-
-        $block;
-    }
-
     # Installs something package-y in the right place, creating the nested
     # pacakges as needed.
     method install_package($/, @name_orig, $scope, $pkgdecl, $package, $outer, $symbol) {
