@@ -264,22 +264,53 @@ class Perl6::World is HLL::World {
         my %to_install;
         my @clash;
         for %stash {
-            my $proto;
+            my $foreign_proto; # of the package we import
+            my $installed_proto; # of the current lexpad (target)
+
             try {
-                $proto := self.find_symbol([$_.key]);
+                $foreign_proto := self.find_symbol([$_.key]);
             }
+
             # It is a multi, so we need to install a proto in the lexpad and add dispatchees.
             # Note: NQPCursorRole does not support get_bool, therefor skipped.
-            if $_.key ne 'NQPCursorRole' && $proto && $proto.is_dispatcher {
-                # Symbol not yet known, we should install a proto here.
-                if !$target.symbol($_.key) {
-                    self.install_lexical_symbol($target, $_.key, $_.value, :clone(0));
+            if $_.key ne 'NQPCursorRole' && $foreign_proto && $foreign_proto.is_dispatcher {
+                $foreign_proto := $_.value;
+
+                my @installed_dispatchees;
+
+                # Symbol is known, we need to add dispatchees to the proto that is already there.
+                if $target.symbol($_.key) {
+                    # reuse the already installed proto
+                    $installed_proto := $target.symbol($_.key)<value>;
+
+                    # remember the installed dispatchees so that we dont add duplicates
+                    for $installed_proto.dispatchees -> $dispatchee {
+                        @installed_dispatchees.push: $dispatchee;
+                    }
                 }
-                # Symbol is known, we need to add dispatchees to the proto that was added earlier.
+                # Symbol not yet known, we should install a proto here.
                 else {
-                    $proto := $target.symbol($_.key)<value>;
-                    self.add_dispatchee_to_proto($proto, $_.value);
-                    self.install_lexical_symbol($target, $_.key, $proto, :clone(0));
+                    # we will add dispatchees to this later
+                    $installed_proto := self.derive_dispatcher( $foreign_proto );
+
+                    # install the foreign symbol (proto?) into our lexpad
+                    self.install_lexical_symbol($target, $_.key, $_.value, :clone(1));
+                }
+
+                if $foreign_proto.dispatchees {
+                    for $foreign_proto.dispatchees -> $foreign_dispatchee {
+                        my $found_new := 0;
+                        for @installed_dispatchees -> $installed_dispatchee {
+                            if $installed_dispatchee =:= $foreign_dispatchee {
+                                $found_new := 1;
+                                last;
+                            }
+                        }
+                        
+                        unless $found_new {
+                            self.add_dispatchee_to_proto($installed_proto, $foreign_dispatchee);
+                        }
+                    }
                 }
             }
             else {
@@ -317,6 +348,23 @@ class Perl6::World is HLL::World {
         1;
     }
     
+    # Adds code to do the signature binding.
+    sub add_signature_binding_code($block, $sig_obj, @params) {
+        # Set arity.
+        my int $arity := 0;
+        $block.arity($arity);
+
+        # Flag that we do custom arguments processing, and invoke the binder.
+        # Need to expose the arguments as a lexical, for things like deferral.
+        $block.custom_args(1);
+        $block[0].push(QAST::Op.new( :op('bind'),
+            QAST::Var.new( :name('call_sig'), :scope('lexical'), :decl('var') ),
+            QAST::Op.new( :op('p6getcallsig') ) ));
+        $block[0].push(QAST::Op.new( :op('p6bindsig') ));
+
+        $block;
+    }
+
     # Installs something package-y in the right place, creating the nested
     # pacakges as needed.
     method install_package($/, @name_orig, $scope, $pkgdecl, $package, $outer, $symbol) {
